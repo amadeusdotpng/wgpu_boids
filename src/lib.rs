@@ -1,3 +1,5 @@
+mod camera;
+
 use winit::{
     event::*,
     event_loop::EventLoop,
@@ -6,6 +8,8 @@ use winit::{
 };
 
 use wgpu::util::DeviceExt;
+
+use camera::Camera;
 
 struct Renderer<'a> {
     surface: wgpu::Surface<'a>,
@@ -20,6 +24,10 @@ struct Renderer<'a> {
     // TODO:
     // boids: Boids
     // boids_buffer: wgpu::Buffer,
+    
+    camera: Camera,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
 
     render_pipeline: wgpu::RenderPipeline,
 
@@ -99,10 +107,52 @@ impl<'a> Renderer<'a> {
             }
         );
 
+
+        let camera = Camera::new(size);
+        let camera_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Camera Buffer"),
+                contents: bytemuck::cast_slice(&[camera.into_matrix()]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        let camera_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("Camera Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }
+                ]
+            }
+        );
+        let camera_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                label: Some("Camera Bind Group"),
+                layout: &camera_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: camera_buffer.as_entire_binding(),
+                    }
+                ]
+            }
+        );
+
         let pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[
+                    &camera_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             }
         );
@@ -173,6 +223,10 @@ impl<'a> Renderer<'a> {
             // boids
             // boids_buffer,
 
+            camera,
+            camera_buffer,
+            camera_bind_group,
+
             window,
         }
     }
@@ -187,16 +241,16 @@ impl<'a> Renderer<'a> {
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            self.camera.update_scale(new_size);
         }
     }
 
     fn update(&mut self) {
-    
+        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera.into_matrix()]))
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        // TODO:
-        false
+        self.camera.process_events(event)
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -234,7 +288,10 @@ impl<'a> Renderer<'a> {
         );
 
         render_pass.set_pipeline(&self.render_pipeline);
+
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+
 
         render_pass.draw(0..VERTICES.len() as u32, 0..1);
 
