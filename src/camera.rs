@@ -9,10 +9,7 @@ pub struct Camera {
     position: [f32; 2],
 }
 
-// #[repr(C)]
-// #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-type CameraUniform = [[f32; 4]; 3];
-
+pub type CameraUniform = [[f32; 4]; 3];
 
 impl Camera {
     pub fn new(viewport_size: winit::dpi::PhysicalSize<u32>) -> Self {

@@ -9,7 +9,7 @@ use winit::{
 
 use wgpu::util::DeviceExt;
 
-use camera::Camera;
+use camera::{Camera, CameraUniform};
 
 struct Renderer<'a> {
     surface: wgpu::Surface<'a>,
@@ -28,6 +28,8 @@ struct Renderer<'a> {
     camera: Camera,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+
+    staging_buffer: wgpu::util::StagingBelt,
 
     render_pipeline: wgpu::RenderPipeline,
 
@@ -147,6 +149,8 @@ impl<'a> Renderer<'a> {
             }
         );
 
+        let staging_buffer = wgpu::util::StagingBelt::new((std::mem::size_of::<CameraUniform>() + 4) as wgpu::BufferAddress);
+
         let pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -215,7 +219,6 @@ impl<'a> Renderer<'a> {
             device,
             queue,
             config,
-            render_pipeline,
 
             vertex_buffer,
             index_buffer,
@@ -226,6 +229,10 @@ impl<'a> Renderer<'a> {
             camera,
             camera_buffer,
             camera_bind_group,
+
+            staging_buffer,
+
+            render_pipeline,
 
             window,
         }
@@ -246,7 +253,20 @@ impl<'a> Renderer<'a> {
     }
 
     fn update(&mut self) {
-        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera.into_matrix()]))
+        let mut encoder = self.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor {
+                label: Some("Staging Buffer Encoder"),
+            }
+        );
+
+        use std::num::NonZero;
+        let size = NonZero::new(std::mem::size_of::<CameraUniform>() as u64).unwrap();
+        self.staging_buffer.write_buffer(&mut encoder, &self.camera_buffer, 0, size, &self.device)
+            .copy_from_slice(bytemuck::cast_slice(&[self.camera.into_matrix()]));
+
+        self.staging_buffer.finish();
+        self.queue.submit(std::iter::once(encoder.finish()));
+        self.staging_buffer.recall();
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
