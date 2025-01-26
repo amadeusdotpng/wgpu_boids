@@ -1,4 +1,5 @@
 mod camera;
+mod boid;
 
 use winit::{
     event::*,
@@ -10,6 +11,7 @@ use winit::{
 use wgpu::util::DeviceExt;
 
 use camera::{Camera, CameraUniform};
+use boid::{Boid, BoidUniform};
 
 struct Renderer<'a> {
     surface: wgpu::Surface<'a>,
@@ -19,11 +21,9 @@ struct Renderer<'a> {
     config: wgpu::SurfaceConfiguration,
 
     vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
 
-    // TODO:
-    // boids: Boids
-    // boids_buffer: wgpu::Buffer,
+    boids: Vec<Boid>,
+    boids_buffer: wgpu::Buffer,
     
     camera: Camera,
     camera_buffer: wgpu::Buffer,
@@ -37,14 +37,12 @@ struct Renderer<'a> {
 }
 
 const VERTICES: &[[f32; 3]] = &[
-    [ 0.00000,  1.00000, 0.0],
-    [-0.55557, -0.83147, 0.0],
-    [ 0.55557, -0.83147, 0.0],
+    [ 0.00000,  1.00000, 1.0],
+    [-0.55557, -0.83147, 1.0],
+    [ 0.55557, -0.83147, 1.0],
 ];
 
-const INDICES: &[u16] = &[
-    0, 1, 2
-];
+const N_BOIDS: usize = 4;
 
 impl<'a> Renderer<'a> {
     async fn new(window: &'a Window) -> Renderer<'a> {
@@ -93,6 +91,7 @@ impl<'a> Renderer<'a> {
             desired_maximum_frame_latency: 2,
         };
 
+
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
@@ -101,14 +100,20 @@ impl<'a> Renderer<'a> {
             }
         );
 
-        let index_buffer = device.create_buffer_init(
+
+        let mut boids = Vec::new();
+        for n in 0..N_BOIDS {
+            boids.push(Boid::new((2 * n) as f32, n as f32, -1.0*(3.14/4.0)))
+        }
+
+        let boids_data = boids.iter().map(Boid::into_matrix).collect::<Vec<BoidUniform>>();
+        let boids_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX,
+                label: Some("Boids Buffer"),
+                contents: bytemuck::cast_slice(&boids_data),
+                usage: wgpu::BufferUsages::VERTEX,
             }
         );
-
 
         let camera = Camera::new(size);
         let camera_buffer = device.create_buffer_init(
@@ -164,6 +169,7 @@ impl<'a> Renderer<'a> {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         const VERTEX_ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
+        const INSTANCE_ATTRIBS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![1 => Float32x3, 2 => Float32x3, 3 => Float32x3];
         let render_pipeline = device.create_render_pipeline(
             &wgpu::RenderPipelineDescriptor {
                 label: Some("Render Pipeline"),
@@ -177,6 +183,11 @@ impl<'a> Renderer<'a> {
                             array_stride: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                             step_mode: wgpu::VertexStepMode::Vertex,
                             attributes: &VERTEX_ATTRIBS,
+                        },
+                        wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<BoidUniform>() as wgpu::BufferAddress,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &INSTANCE_ATTRIBS,
                         },
                     ],
                 },
@@ -221,10 +232,9 @@ impl<'a> Renderer<'a> {
             config,
 
             vertex_buffer,
-            index_buffer,
 
-            // boids
-            // boids_buffer,
+            boids,
+            boids_buffer,
 
             camera,
             camera_buffer,
@@ -247,6 +257,7 @@ impl<'a> Renderer<'a> {
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
+
             self.surface.configure(&self.device, &self.config);
             self.camera.update_scale(new_size);
         }
@@ -310,10 +321,11 @@ impl<'a> Renderer<'a> {
         render_pass.set_pipeline(&self.render_pipeline);
 
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.boids_buffer.slice(..));
         render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
 
 
-        render_pass.draw(0..VERTICES.len() as u32, 0..1);
+        render_pass.draw(0..VERTICES.len() as u32, 0..(self.boids.len() as u32));
 
         drop(render_pass);
 
