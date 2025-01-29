@@ -15,8 +15,8 @@ impl Camera {
     pub fn new(viewport_size: winit::dpi::PhysicalSize<u32>) -> Self {
         let scale_factor = 10.0;
         let scale = [
-            1.0 / viewport_size.width as f32,
-            1.0 / viewport_size.height as f32,
+            5.0 / viewport_size.width as f32,
+            5.0 / viewport_size.height as f32,
         ];
 
         let position = [
@@ -29,8 +29,8 @@ impl Camera {
 
     pub fn update_scale(&mut self, new_viewport_size: winit::dpi::PhysicalSize<u32>) {
         self.scale = [
-            50.0 / new_viewport_size.width as f32,
-            50.0 / new_viewport_size.height as f32,
+            5.0 / new_viewport_size.width as f32,
+            5.0 / new_viewport_size.height as f32,
 
         ];
     }
