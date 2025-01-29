@@ -29,8 +29,8 @@ impl Camera {
 
     pub fn update_scale(&mut self, new_viewport_size: winit::dpi::PhysicalSize<u32>) {
         self.scale = [
-            100.0 / new_viewport_size.width as f32,
-            100.0 / new_viewport_size.height as f32,
+            50.0 / new_viewport_size.width as f32,
+            50.0 / new_viewport_size.height as f32,
 
         ];
     }

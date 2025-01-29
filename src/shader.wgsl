@@ -3,9 +3,8 @@ struct VertexInput {
 }
 
 struct InstanceInput {
-    @location(1) model_matrix_0: vec3<f32>,
-    @location(2) model_matrix_1: vec3<f32>,
-    @location(3) model_matrix_2: vec3<f32>,
+    @location(1) pos: vec2<f32>,
+    @location(2) rot: f32,
 }
 
 struct VertexOutput {
@@ -22,11 +21,16 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
 
+
+    let rot_sin = sin(instance.rot);
+    let rot_cos = cos(instance.rot);
     let instance_mat = mat3x3<f32>(
-        instance.model_matrix_0,
-        instance.model_matrix_1,
-        instance.model_matrix_2,
+        vec3<f32>( rot_cos, rot_sin, 0),
+        vec3<f32>(-rot_sin, rot_cos, 0),
+        vec3<f32>( instance.pos    , 1),
     );
+
+
     let clip_position = camera_mat * instance_mat * vertex.position;
     out.clip_position = vec4<f32>(clip_position, 1.0);
 
