@@ -47,7 +47,7 @@ const VERTICES: &[[f32; 3]] = &[
     [ 0.55557, -0.83147, 1.0],
 ];
 
-const N_BOIDS: usize = 65536;
+const N_BOIDS: usize = 128;
 
 impl<'a> Renderer<'a> {
     async fn new(window: &'a Window) -> Renderer<'a> {
