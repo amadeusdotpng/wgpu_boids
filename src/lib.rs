@@ -10,6 +10,8 @@ use winit::{
 
 use wgpu::util::DeviceExt;
 
+use rand::prelude::*;
+
 use camera::{Camera, CameraUniform};
 use boid::Boid;
 
@@ -23,7 +25,7 @@ struct Renderer<'a> {
     frame_count: usize,
 
     boids_buffers: Vec<wgpu::Buffer>,
-    // boids_bind_groups: Vec<wgpu::BindGroup>,
+    boids_bind_groups: Vec<wgpu::BindGroup>,
     
     camera: Camera,
     camera_buffer: wgpu::Buffer,
@@ -34,6 +36,7 @@ struct Renderer<'a> {
     vertex_buffer: wgpu::Buffer,
 
     render_pipeline: wgpu::RenderPipeline,
+    compute_pipeline: wgpu::ComputePipeline,
 
     window: &'a Window,
 }
@@ -44,7 +47,7 @@ const VERTICES: &[[f32; 3]] = &[
     [ 0.55557, -0.83147, 1.0],
 ];
 
-const N_BOIDS: usize = 8;
+const N_BOIDS: usize = 65536;
 
 impl<'a> Renderer<'a> {
     async fn new(window: &'a Window) -> Renderer<'a> {
@@ -97,11 +100,16 @@ impl<'a> Renderer<'a> {
         let frame_count = 0;
 
 
+        let mut rng = rand::rng();
         let mut boids = Vec::new();
-        for n in 0..N_BOIDS {
-            let theta = (n as f32) * (3.14 / 4.0);
-            boids.push(Boid::new(3.0*f32::cos(theta), 3.0*f32::sin(theta), theta+(3.14/2.0)));
+        for _ in 0..N_BOIDS {
+            let x = (2.0*rng.random::<f32>()-1.0) * 2.0;
+            let y = (2.0*rng.random::<f32>()-1.0) * 2.0;
+            let a = rng.random::<f32>() * 6.28318;
+            let boid = Boid::new(x, y, a);
+            boids.push(boid);
         }
+        
 
         let mut boids_buffers = Vec::new();
         for i in 0..2 {
@@ -115,6 +123,55 @@ impl<'a> Renderer<'a> {
                 }
             );
             boids_buffers.push(buffer);
+        }
+
+        let boids_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("Boid Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }
+                ],
+            }
+        );
+
+        let mut boids_bind_groups = Vec::new();
+        for i in 0..2 {
+            let bind_group = device.create_bind_group(
+                &wgpu::BindGroupDescriptor {
+                    label: Some(format!("Bind Group {}", i).as_str()),
+                    layout: &boids_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: boids_buffers[i % 2].as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: boids_buffers[(i + 1) % 2].as_entire_binding(),
+                        },
+                    ],
+                }
+            );
+            boids_bind_groups.push(bind_group);
         }
 
 
@@ -173,8 +230,6 @@ impl<'a> Renderer<'a> {
 
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
-        // const VERTEX_ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
-        // const INSTANCE_ATTRIBS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![1 => Float32x2, 2 => Float32];
         let render_pipeline = device.create_render_pipeline(
             &wgpu::RenderPipelineDescriptor {
                 label: Some("Render Pipeline"),
@@ -229,6 +284,28 @@ impl<'a> Renderer<'a> {
         );
 
 
+        let compute_pipeline_layout = device.create_pipeline_layout(
+            &wgpu::PipelineLayoutDescriptor {
+                label: Some("Compute Pipeline Layout"),
+                bind_group_layouts: &[
+                    &boids_bind_group_layout
+                ],
+                push_constant_ranges: &[],
+            }
+        );
+
+        let compute_pipeline = device.create_compute_pipeline(
+            &wgpu::ComputePipelineDescriptor {
+                label: Some("Compute Pipeline"),
+                layout: Some(&compute_pipeline_layout),
+                module: &shader,
+                entry_point: "cs_main",
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                cache: None,
+            }
+        );
+
+
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
@@ -247,6 +324,7 @@ impl<'a> Renderer<'a> {
             frame_count,
 
             boids_buffers,
+            boids_bind_groups,
 
             camera,
             camera_buffer,
@@ -257,6 +335,7 @@ impl<'a> Renderer<'a> {
             vertex_buffer,
 
             render_pipeline,
+            compute_pipeline, 
 
             window,
         }
@@ -278,7 +357,7 @@ impl<'a> Renderer<'a> {
     }
 
     fn update(&mut self) {
-        let mut encoder = self.device.create_command_encoder(
+        let mut update_encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {
                 label: Some("Staging Buffer Encoder"),
             }
@@ -286,14 +365,33 @@ impl<'a> Renderer<'a> {
 
         use std::num::NonZero;
         let size = NonZero::new(std::mem::size_of::<CameraUniform>() as u64).unwrap();
-        self.staging_buffer.write_buffer(&mut encoder, &self.camera_buffer, 0, size, &self.device)
+        self.staging_buffer.write_buffer(&mut update_encoder, &self.camera_buffer, 0, size, &self.device)
             .copy_from_slice(bytemuck::cast_slice(&[self.camera.into_matrix()]));
 
         self.staging_buffer.finish();
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.queue.submit(std::iter::once(update_encoder.finish()));
         self.staging_buffer.recall();
 
-        self.frame_count = (self.frame_count + 1) % usize::MAX;
+        let mut compute_encoder = self.device.create_command_encoder(
+            &wgpu::CommandEncoderDescriptor {
+                label: Some("Compute Pass Encoder")
+            }
+        );
+
+        let mut compute_pass = compute_encoder.begin_compute_pass(
+            &wgpu::ComputePassDescriptor {
+                label: Some("Compute Pass"),
+                timestamp_writes: None,
+            }
+        );
+
+        compute_pass.set_pipeline(&self.compute_pipeline);
+        compute_pass.set_bind_group(0, &self.boids_bind_groups[self.frame_count % 2], &[]);
+        compute_pass.dispatch_workgroups(1024, 1, 1);
+
+        drop(compute_pass);
+
+        self.queue.submit(std::iter::once(compute_encoder.finish()));
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
@@ -334,7 +432,7 @@ impl<'a> Renderer<'a> {
             }
         );
 
-        let instance_buffer = &self.boids_buffers[self.frame_count % 2];
+        let instance_buffer = &self.boids_buffers[(self.frame_count + 1) % 2];
 
         render_pass.set_pipeline(&self.render_pipeline);
 
@@ -351,7 +449,9 @@ impl<'a> Renderer<'a> {
 
         output.present();
 
+        self.frame_count = (self.frame_count + 1) % usize::MAX;
         Ok(())
+
     }
 }
 
@@ -370,7 +470,9 @@ pub async fn run() {
             if window_id != renderer.window().id() { return }
             if renderer.input(event) { return }
 
-            renderer.update();
+            if renderer.frame_count != 0 {
+                renderer.update();
+            }
             match event {
                 WindowEvent::CloseRequested
                 | WindowEvent::KeyboardInput { 
@@ -393,6 +495,7 @@ pub async fn run() {
 
                     if !surface_configured { return; }
 
+                    renderer.update();
                     match renderer.render() {
                         Ok(_) => {}
                                                     // reconfigure the surface if it's lost or outdated
@@ -413,6 +516,7 @@ pub async fn run() {
                     }
                 }
                 _ => {}
+
             }
         }
     });
