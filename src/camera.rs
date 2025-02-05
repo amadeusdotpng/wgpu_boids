@@ -6,17 +6,17 @@ use winit::{
 pub struct Camera {
     scale_factor: f32,
     scale: [f32; 2],
-    position: [f32; 2],
+    pub position: [f32; 2],
 }
 
 pub type CameraUniform = [[f32; 4]; 3];
 
 impl Camera {
     pub fn new(viewport_size: winit::dpi::PhysicalSize<u32>) -> Self {
-        let scale_factor = 10.0;
+        let scale_factor = 100.0;
         let scale = [
-            5.0 / viewport_size.width as f32,
-            5.0 / viewport_size.height as f32,
+            viewport_size.width as f32,
+            viewport_size.height as f32,
         ];
 
         let position = [
@@ -29,8 +29,8 @@ impl Camera {
 
     pub fn update_scale(&mut self, new_viewport_size: winit::dpi::PhysicalSize<u32>) {
         self.scale = [
-            5.0 / new_viewport_size.width as f32,
-            5.0 / new_viewport_size.height as f32,
+            new_viewport_size.width as f32,
+            new_viewport_size.height as f32,
 
         ];
     }
@@ -47,10 +47,10 @@ impl Camera {
             } => match keycode {
                 KeyCode::KeyW | KeyCode::ArrowUp    => { self.position[1] += 0.05; true }
                 KeyCode::KeyS | KeyCode::ArrowDown  => { self.position[1] -= 0.05; true }
-                KeyCode::KeyD | KeyCode::ArrowLeft  => { self.position[0] += 0.05; true }
-                KeyCode::KeyA | KeyCode::ArrowRight => { self.position[0] -= 0.05; true }
-                KeyCode::KeyE  => { self.scale_factor += 0.5; true }
-                KeyCode::KeyQ  => { self.scale_factor -= 0.5; true }
+                KeyCode::KeyD | KeyCode::ArrowRight => { self.position[0] += 0.05; true }
+                KeyCode::KeyA | KeyCode::ArrowLeft  => { self.position[0] -= 0.05; true }
+                KeyCode::KeyE  => { self.scale_factor += 5.; true }
+                KeyCode::KeyQ  => { self.scale_factor -= 5.; true }
                 _ => false
             }
             _ => false
@@ -62,9 +62,18 @@ impl Camera {
         let sf = self.scale_factor;
         let [sx, sy] = self.scale;
         let [px, py] = self.position;
-        [[sf*sx, 0.   , 0., 0.],
-         [0.   , sf*sy, 0., 0.],
+        [[sf/sx, 0.   , 0., 0.],
+         [0.   , sf/sy, 0., 0.],
          [-px  , -py  , 1., 0.]]
+    }
+
+    pub fn into_proj_matrix(&self) -> CameraUniform {
+        let sf = self.scale_factor;
+        let [sx, sy] = self.scale;
+        let [px, py] = self.position;
+        [[sf/2., 0.    , 0., 0.],
+         [0.   , sf/2., 0., 0.],
+         [-px*sx/2.   , -py*sy/2.    , 1., 0.]]
     }
 }
 

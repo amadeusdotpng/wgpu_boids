@@ -15,6 +15,7 @@ use rand::prelude::*;
 use camera::{Camera, CameraUniform};
 use boid::Boid;
 
+type CursorUniform = [f32; 2];
 struct Renderer<'a> {
     surface: wgpu::Surface<'a>,
     size: winit::dpi::PhysicalSize<u32>,
@@ -29,7 +30,12 @@ struct Renderer<'a> {
     
     camera: Camera,
     camera_buffer: wgpu::Buffer,
+    inv_camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+
+    cursor: CursorUniform,
+    cursor_buffer: wgpu::Buffer,
+    cursor_bind_group: wgpu::BindGroup,
 
     staging_buffer: wgpu::util::StagingBelt,
 
@@ -42,12 +48,12 @@ struct Renderer<'a> {
 }
 
 const VERTICES: &[[f32; 3]] = &[
-    [ 0.00000,  1.00000, 1.0],
-    [-0.55557, -0.83147, 1.0],
-    [ 0.55557, -0.83147, 1.0],
+    [ 1.00000,  0.00000, 1.0],
+    [-0.83147,  0.55557,  1.0],
+    [-0.83147, -0.55557,  1.0],
 ];
 
-const N_BOIDS: usize = 128;
+const N_BOIDS: usize = 100;
 
 impl<'a> Renderer<'a> {
     async fn new(window: &'a Window) -> Renderer<'a> {
@@ -99,12 +105,11 @@ impl<'a> Renderer<'a> {
 
         let frame_count = 0;
 
-
         let mut rng = rand::rng();
         let mut boids = Vec::new();
         for _ in 0..N_BOIDS {
-            let x = (2.0*rng.random::<f32>()-1.0) * 2.0;
-            let y = (2.0*rng.random::<f32>()-1.0) * 2.0;
+            let x = (10.0*rng.random::<f32>()-5.0) * 2.0;
+            let y = (10.0*rng.random::<f32>()-5.0) * 2.0;
             let a = rng.random::<f32>() * 6.28318;
             let boid = Boid::new(x, y, a);
             boids.push(boid);
@@ -183,6 +188,13 @@ impl<'a> Renderer<'a> {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
+        let inv_camera_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Camera Buffer"),
+                contents: bytemuck::cast_slice(&[camera.into_proj_matrix()]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
 
         let camera_bind_group_layout = device.create_bind_group_layout(
             &wgpu::BindGroupLayoutDescriptor {
@@ -190,7 +202,17 @@ impl<'a> Renderer<'a> {
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
@@ -209,12 +231,55 @@ impl<'a> Renderer<'a> {
                     wgpu::BindGroupEntry {
                         binding: 0,
                         resource: camera_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: inv_camera_buffer.as_entire_binding(),
                     }
                 ]
             }
         );
 
+        let cursor = [size.width as f32 / 2.0, size.height as f32 / 2.0];
+        let cursor_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Cursor Buffer"),
+                contents: bytemuck::cast_slice(&[cursor]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
 
+        let cursor_bind_group_layout = device.create_bind_group_layout(
+            &wgpu::BindGroupLayoutDescriptor {
+                label: Some("Camera Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }
+                ]
+            }
+        );
+        let cursor_bind_group = device.create_bind_group(
+            &wgpu::BindGroupDescriptor {
+                label: Some("Camera Bind Group"),
+                layout: &cursor_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: cursor_buffer.as_entire_binding(),
+                    }
+                ]
+            }
+        );
+
+        // size of CameraUniform > size of CursorUniform
         let staging_buffer = wgpu::util::StagingBelt::new((std::mem::size_of::<CameraUniform>() + 4) as wgpu::BufferAddress);
 
 
@@ -228,14 +293,13 @@ impl<'a> Renderer<'a> {
             }
         );
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
-
+        let render_shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
         let render_pipeline = device.create_render_pipeline(
             &wgpu::RenderPipelineDescriptor {
                 label: Some("Render Pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
-                    module: &shader,
+                    module: &render_shader,
                     entry_point: "vs_main",
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     buffers: &[
@@ -252,7 +316,7 @@ impl<'a> Renderer<'a> {
                     ],
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: &shader,
+                    module: &render_shader,
                     entry_point: "fs_main",
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     targets: &[
@@ -283,12 +347,14 @@ impl<'a> Renderer<'a> {
             }
         );
 
-
+        let compute_shader = device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
         let compute_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
                 label: Some("Compute Pipeline Layout"),
                 bind_group_layouts: &[
-                    &boids_bind_group_layout
+                    &boids_bind_group_layout,
+                    &camera_bind_group_layout,
+                    &cursor_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             }
@@ -298,7 +364,7 @@ impl<'a> Renderer<'a> {
             &wgpu::ComputePipelineDescriptor {
                 label: Some("Compute Pipeline"),
                 layout: Some(&compute_pipeline_layout),
-                module: &shader,
+                module: &compute_shader,
                 entry_point: "cs_main",
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 cache: None,
@@ -328,7 +394,12 @@ impl<'a> Renderer<'a> {
 
             camera,
             camera_buffer,
+            inv_camera_buffer,
             camera_bind_group,
+
+            cursor,
+            cursor_buffer,
+            cursor_bind_group,
 
             staging_buffer,
 
@@ -368,6 +439,13 @@ impl<'a> Renderer<'a> {
         self.staging_buffer.write_buffer(&mut update_encoder, &self.camera_buffer, 0, size, &self.device)
             .copy_from_slice(bytemuck::cast_slice(&[self.camera.into_matrix()]));
 
+        self.staging_buffer.write_buffer(&mut update_encoder, &self.inv_camera_buffer, 0, size, &self.device)
+            .copy_from_slice(bytemuck::cast_slice(&[self.camera.into_proj_matrix()]));
+
+        let size = NonZero::new(std::mem::size_of::<CursorUniform>() as u64).unwrap();
+        self.staging_buffer.write_buffer(&mut update_encoder, &self.cursor_buffer, 0, size, &self.device)
+            .copy_from_slice(bytemuck::cast_slice(&[self.cursor]));
+
         self.staging_buffer.finish();
         self.queue.submit(std::iter::once(update_encoder.finish()));
         self.staging_buffer.recall();
@@ -387,6 +465,8 @@ impl<'a> Renderer<'a> {
 
         compute_pass.set_pipeline(&self.compute_pipeline);
         compute_pass.set_bind_group(0, &self.boids_bind_groups[self.frame_count % 2], &[]);
+        compute_pass.set_bind_group(1, &self.camera_bind_group, &[]);
+        compute_pass.set_bind_group(2, &self.cursor_bind_group, &[]);
         compute_pass.dispatch_workgroups(1024, 1, 1);
 
         drop(compute_pass);
@@ -395,7 +475,19 @@ impl<'a> Renderer<'a> {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        self.camera.process_events(event)
+        self.camera.process_events(event) ||
+        match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                let x = position.x as f32;
+                let y = self.size.height as f32 - position.y as f32;
+                self.cursor = [
+                    x - (self.size.width  as f32 / 2.0),// / self.size.width as f32),
+                    y - (self.size.height as f32 / 2.0),// / self.size.height as f32),
+                ]; 
+                true
+            }
+            _ => false
+        }
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -470,9 +562,6 @@ pub async fn run() {
             if window_id != renderer.window().id() { return }
             if renderer.input(event) { return }
 
-            if renderer.frame_count != 0 {
-                renderer.update();
-            }
             match event {
                 WindowEvent::CloseRequested
                 | WindowEvent::KeyboardInput { 
