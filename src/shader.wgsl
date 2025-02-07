@@ -6,7 +6,7 @@ struct VertexInput {
 
 struct BoidInstance {
     @location(1) pos: vec2<f32>,
-    @location(2) rot: f32,
+    @location(2) vel: vec2<f32>,
 }
 
 struct VertexOutput {
@@ -23,9 +23,10 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
 
+    let rot = atan2(instance.vel.y, instance.vel.x);
 
-    let rot_sin = sin(instance.rot);
-    let rot_cos = cos(instance.rot);
+    let rot_sin = sin(rot);
+    let rot_cos = cos(rot);
     let instance_mat = mat3x3<f32>(
         vec3<f32>( rot_cos, rot_sin, 0),
         vec3<f32>(-rot_sin, rot_cos, 0),
@@ -46,7 +47,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 struct Boid {
     pos: vec2<f32>,
-    rot: f32,
+    vel: vec2<f32>,
 }
 
 @group(0) @binding(0) var<storage, read> boids_src: array<Boid>;
@@ -57,17 +58,11 @@ struct Boid {
 fn cs_main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
     let total = arrayLength(&boids_src);
     let idx = global_invocation_id.x;
-    if(idx >= total) {
-        return;
-    }
+    if(idx >= total) { return; }
+
     let instance = boids_src[idx];
 
-    let rot_cos = cos(instance.rot + PI/2);
-    let rot_sin = sin(instance.rot + PI/2);
-    let pos = vec2<f32>(
-        instance.pos.x + 0.05 * rot_cos,
-        instance.pos.y + 0.05 * rot_sin,
-    );
-
-    boids_dst[idx] = Boid(pos, instance.rot);
+    let new_pos = instance.pos + instance.vel * 0.05;
+    boids_dst[idx] = Boid(new_pos, instance.vel);
 }
+

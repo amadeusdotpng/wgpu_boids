@@ -42,12 +42,12 @@ struct Renderer<'a> {
 }
 
 const VERTICES: &[[f32; 3]] = &[
-    [ 0.00000,  1.00000, 1.0],
-    [-0.55557, -0.83147, 1.0],
-    [ 0.55557, -0.83147, 1.0],
+    [ 1.00000,  0.00000, 1.0],
+    [-0.83147,  0.55557,  1.0],
+    [-0.83147, -0.55557,  1.0],
 ];
 
-const N_BOIDS: usize = 128;
+const N_BOIDS: usize = 256;
 
 impl<'a> Renderer<'a> {
     async fn new(window: &'a Window) -> Renderer<'a> {
@@ -106,7 +106,8 @@ impl<'a> Renderer<'a> {
             let x = (2.0*rng.random::<f32>()-1.0) * 2.0;
             let y = (2.0*rng.random::<f32>()-1.0) * 2.0;
             let a = rng.random::<f32>() * 6.28318;
-            let boid = Boid::new(x, y, a);
+            let (vy, vx) = f32::sin_cos(a);
+            let boid = Boid::new(x, y, vx, vy);
             boids.push(boid);
         }
         
@@ -247,7 +248,7 @@ impl<'a> Renderer<'a> {
                         wgpu::VertexBufferLayout {
                             array_stride: std::mem::size_of::<Boid>() as wgpu::BufferAddress,
                             step_mode: wgpu::VertexStepMode::Instance,
-                            attributes: &wgpu::vertex_attr_array![1 => Float32x2, 2 => Float32],
+                            attributes: &wgpu::vertex_attr_array![1 => Float32x2, 2 => Float32x2],
                         },
                     ],
                 },
