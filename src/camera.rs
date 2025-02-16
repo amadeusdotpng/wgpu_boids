@@ -45,12 +45,12 @@ impl Camera {
                 },
                 ..
             } => match keycode {
-                KeyCode::KeyW | KeyCode::ArrowUp    => { self.position[1] += 0.05; true }
-                KeyCode::KeyS | KeyCode::ArrowDown  => { self.position[1] -= 0.05; true }
-                KeyCode::KeyD | KeyCode::ArrowLeft  => { self.position[0] += 0.05; true }
-                KeyCode::KeyA | KeyCode::ArrowRight => { self.position[0] -= 0.05; true }
-                KeyCode::KeyE  => { self.scale_factor += 0.5; true }
-                KeyCode::KeyQ  => { self.scale_factor -= 0.5; true }
+                KeyCode::KeyW | KeyCode::ArrowUp    => { self.position[1] += 0.05 / self.scale_factor; true }
+                KeyCode::KeyS | KeyCode::ArrowDown  => { self.position[1] -= 0.05 / self.scale_factor; true }
+                KeyCode::KeyD | KeyCode::ArrowRight  => { self.position[0] += 0.05 / self.scale_factor; true }
+                KeyCode::KeyA | KeyCode::ArrowLeft => { self.position[0] -= 0.05 / self.scale_factor; true }
+                KeyCode::KeyE  => { self.scale_factor += 0.25; true }
+                KeyCode::KeyQ  => { self.scale_factor = f32::max(0.5, self.scale_factor - 0.25); true }
                 _ => false
             }
             _ => false
@@ -64,7 +64,7 @@ impl Camera {
         let [px, py] = self.position;
         [[sf*sx, 0.   , 0., 0.],
          [0.   , sf*sy, 0., 0.],
-         [-px  , -py  , 1., 0.]]
+         [-px*sf  , -py*sf  , 1., 0.]]
     }
 }
 
