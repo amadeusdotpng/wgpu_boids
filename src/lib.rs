@@ -47,7 +47,7 @@ const VERTICES: &[[f32; 3]] = &[
     [-0.83147, -0.55557,  1.0],
 ];
 
-const N_BOIDS: usize = 256;
+const N_BOIDS: usize = 10000;
 
 impl<'a> Renderer<'a> {
     async fn new(window: &'a Window) -> Renderer<'a> {
@@ -100,11 +100,13 @@ impl<'a> Renderer<'a> {
         let frame_count = 0;
 
 
+        let wd = 1024.0;
+        let ht = 1024.0;
         let mut rng = rand::rng();
         let mut boids = Vec::new();
         for _ in 0..N_BOIDS {
-            let x = (2.0*rng.random::<f32>()-1.0) * 2.0;
-            let y = (2.0*rng.random::<f32>()-1.0) * 2.0;
+            let x = wd * rng.random::<f32>() - (wd / 2.0);
+            let y = ht * rng.random::<f32>() - (ht / 2.0);
             let a = rng.random::<f32>() * 6.28318;
             let (vy, vx) = f32::sin_cos(a);
             let boid = Boid::new(x, y, vx, vy);
@@ -461,6 +463,7 @@ pub async fn run() {
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
         .with_decorations(false)
+        .with_inner_size(winit::dpi::PhysicalSize{width: 1280*2, height: 720*2})
         .build(&event_loop).unwrap();
 
     let mut renderer = Renderer::new(&window).await;
@@ -492,6 +495,14 @@ pub async fn run() {
                 },
 
                 WindowEvent::RedrawRequested => {
+                /*WindowEvent::KeyboardInput {
+                    event: KeyEvent {
+                        state: ElementState::Pressed,
+                        physical_key: PhysicalKey::Code(KeyCode::Enter),
+                        ..
+                    },
+                    ..
+                } => { */
                     renderer.window().request_redraw();
 
                     if !surface_configured { return; }
