@@ -231,14 +231,14 @@ impl<'a> Renderer<'a> {
             }
         );
 
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+        let render_shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         let render_pipeline = device.create_render_pipeline(
             &wgpu::RenderPipelineDescriptor {
                 label: Some("Render Pipeline"),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
-                    module: &shader,
+                    module: &render_shader,
                     entry_point: "vs_main",
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     buffers: &[
@@ -255,7 +255,7 @@ impl<'a> Renderer<'a> {
                     ],
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: &shader,
+                    module: &render_shader,
                     entry_point: "fs_main",
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     targets: &[
@@ -286,6 +286,7 @@ impl<'a> Renderer<'a> {
             }
         );
 
+        let compute_shader = device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
 
         let compute_pipeline_layout = device.create_pipeline_layout(
             &wgpu::PipelineLayoutDescriptor {
@@ -301,7 +302,7 @@ impl<'a> Renderer<'a> {
             &wgpu::ComputePipelineDescriptor {
                 label: Some("Compute Pipeline"),
                 layout: Some(&compute_pipeline_layout),
-                module: &shader,
+                module: &compute_shader,
                 entry_point: "cs_main",
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 cache: None,
@@ -463,8 +464,9 @@ pub async fn run() {
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new()
         .with_decorations(false)
-        .with_inner_size(winit::dpi::PhysicalSize{width: 1280*2, height: 720*2})
+        //.with_inner_size(winit::dpi::PhysicalSize{width: 1280*2, height: 720*2})
         .build(&event_loop).unwrap();
+    window.set_cursor_visible(false);
 
     let mut renderer = Renderer::new(&window).await;
     let mut surface_configured = false;
